@@ -36,7 +36,7 @@ def ask_dify(user_id: str, message: str) -> str:
     payload = {
         "inputs": {},
         "query": message,
-        "response_mode": "streaming",
+        "response_mode": "blocking",
         "user": user_id,
     }
     if user_id in conversation_ids:
@@ -47,36 +47,13 @@ def ask_dify(user_id: str, message: str) -> str:
         headers=headers,
         json=payload,
         timeout=60,
-        stream=True,
     )
     response.raise_for_status()
 
-    import json
-    answer = ""
-    conv_id = ""
-    for line in response.iter_lines():
-        if line:
-            line_str = line.decode("utf-8")
-            print(f"Dify stream line: {line_str[:200]}")
-            if line_str.startswith("data: "):
-                try:
-                    data = json.loads(line_str[6:])
-                    event = data.get("event", "")
-                    print(f"Dify event: {event}")
-                    if event == "message":
-                        answer += data.get("answer", "")
-                    elif event == "agent_message":
-                        answer += data.get("answer", "")
-                    elif event == "text_chunk":
-                        answer += data.get("data", {}).get("text", "")
-                    elif event == "message_end":
-                        conv_id = data.get("conversation_id", "")
-                    elif event == "workflow_finished":
-                        outputs = data.get("data", {}).get("outputs", {})
-                        answer = outputs.get("answer", outputs.get("text", answer))
-                except Exception as e:
-                    print(f"Parse error: {e}")
-
+    data = response.json()
+    print(f"Dify response: {str(data)[:300]}")
+    answer = data.get("answer", "")
+    conv_id = data.get("conversation_id", "")
     if conv_id:
         conversation_ids[user_id] = conv_id
     print(f"Final answer: {answer[:100]}")
