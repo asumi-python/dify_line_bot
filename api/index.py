@@ -36,7 +36,7 @@ def ask_dify(user_id: str, message: str) -> str:
     payload = {
         "inputs": {},
         "query": message,
-        "response_mode": "blocking",
+        "response_mode": "streaming",
         "user": user_id,
     }
     if user_id in conversation_ids:
@@ -46,13 +46,30 @@ def ask_dify(user_id: str, message: str) -> str:
         f"{DIFY_BASE_URL}/chat-messages",
         headers=headers,
         json=payload,
-        timeout=25,
+        timeout=60,
+        stream=True,
     )
     response.raise_for_status()
-    data = response.json()
 
-    conversation_ids[user_id] = data.get("conversation_id", "")
-    return data.get("answer", "うまく答えられませんでした。もう一度試してください。")
+    answer = ""
+    conv_id = ""
+    for line in response.iter_lines():
+        if line:
+            line_str = line.decode("utf-8")
+            if line_str.startswith("data: "):
+                import json
+                try:
+                    data = json.loads(line_str[6:])
+                    if data.get("event") == "message":
+                        answer += data.get("answer", "")
+                    elif data.get("event") == "message_end":
+                        conv_id = data.get("conversation_id", "")
+                except Exception:
+                    pass
+
+    if conv_id:
+        conversation_ids[user_id] = conv_id
+    return answer or "うまく答えられませんでした。もう一度試してください。"
 
 
 def send_dify_response(user_id: str, message: str):
