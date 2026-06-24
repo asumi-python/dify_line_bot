@@ -1,5 +1,6 @@
 import os
 import requests
+import threading
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -8,6 +9,7 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
@@ -55,6 +57,23 @@ def ask_dify(user_id: str, message: str) -> str:
     return data.get("answer", "うまく答えられませんでした。もう一度試してください。")
 
 
+def send_dify_response(user_id: str, message: str):
+    """別スレッドでDifyに問い合わせてプッシュメッセージで返す"""
+    try:
+        reply_text = ask_dify(user_id, message)
+    except Exception:
+        reply_text = "申し訳ありません、エラーが発生しました。もう一度お試しください。"
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.push_message_with_http_info(
+            PushMessageRequest(
+                to=user_id,
+                messages=[TextMessage(text=reply_text)],
+            )
+        )
+
+
 @app.route("/webhook", methods=["POST"])
 @app.route("/api/index", methods=["GET", "POST"])
 @app.route("/", methods=["GET", "POST"])
@@ -76,19 +95,19 @@ def handle_message(event):
     user_message = event.message.text
     reply_token = event.reply_token
 
-    try:
-        reply_text = ask_dify(user_id, user_message)
-    except Exception as e:
-        reply_text = "申し訳ありません、エラーが発生しました。もう一度お試しください。"
-
+    # まず「考え中」とすぐ返信する
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
                 reply_token=reply_token,
-                messages=[TextMessage(text=reply_text)],
+                messages=[TextMessage(text="🍳 レシピを考えています...少々お待ちください！")],
             )
         )
+
+    # 別スレッドでDifyに問い合わせてプッシュメッセージで返す
+    thread = threading.Thread(target=send_dify_response, args=(user_id, user_message))
+    thread.start()
 
 
 if __name__ == "__main__":
