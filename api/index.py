@@ -59,8 +59,11 @@ def ask_dify(user_id: str, message: str) -> str:
     return data.get("answer", "うまく答えられませんでした。もう一度試してください。")
 
 
-@app.route("/api/index", methods=["POST"])
+@app.route("/", methods=["GET", "POST"])
+@app.route("/api/index", methods=["GET", "POST"])
 def callback():
+    if request.method == "GET":
+        return "OK"
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
     try:
