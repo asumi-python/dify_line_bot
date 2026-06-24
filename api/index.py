@@ -56,20 +56,23 @@ def ask_dify(user_id: str, message: str) -> str:
 
 
 def send_dify_response(user_id: str, message: str):
-    """別スレッドでDifyに問い合わせてプッシュメッセージで返す"""
     try:
         reply_text = ask_dify(user_id, message)
-    except Exception:
-        reply_text = "申し訳ありません、エラーが発生しました。もう一度お試しください。"
+    except Exception as e:
+        print(f"Dify error: {e}")
+        reply_text = f"Difyエラー: {str(e)[:100]}"
 
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.push_message_with_http_info(
-            PushMessageRequest(
-                to=user_id,
-                messages=[TextMessage(text=reply_text)],
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message_with_http_info(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text=reply_text)],
+                )
             )
-        )
+    except Exception as e:
+        print(f"Push message error: {e}")
 
 
 @app.route("/webhook", methods=["POST"])
