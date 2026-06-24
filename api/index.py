@@ -46,7 +46,7 @@ def ask_dify(user_id: str, message: str) -> str:
         f"{DIFY_BASE_URL}/chat-messages",
         headers=headers,
         json=payload,
-        timeout=30,
+        timeout=25,
     )
     response.raise_for_status()
     data = response.json()
@@ -74,14 +74,18 @@ def callback():
 def handle_message(event):
     user_id = event.source.user_id
     user_message = event.message.text
+    reply_token = event.reply_token
 
-    reply_text = ask_dify(user_id, user_message)
+    try:
+        reply_text = ask_dify(user_id, user_message)
+    except Exception as e:
+        reply_text = "申し訳ありません、エラーが発生しました。もう一度お試しください。"
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
-                reply_token=event.reply_token,
+                reply_token=reply_token,
                 messages=[TextMessage(text=reply_text)],
             )
         )
