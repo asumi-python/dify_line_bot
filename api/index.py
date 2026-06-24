@@ -25,12 +25,10 @@ DIFY_BASE_URL = os.environ.get("DIFY_BASE_URL", "https://api.dify.ai/v1")
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ユーザーごとの会話IDを記憶する（サーバーが再起動するとリセットされる）
 conversation_ids = {}
 
 
 def ask_dify(user_id: str, message: str) -> str:
-    """DifyのAPIにメッセージを送って返答を取得する"""
     headers = {
         "Authorization": f"Bearer {DIFY_API_KEY}",
         "Content-Type": "application/json",
@@ -41,7 +39,6 @@ def ask_dify(user_id: str, message: str) -> str:
         "response_mode": "blocking",
         "user": user_id,
     }
-    # 2回目以降は会話IDを付けて会話の流れを続ける
     if user_id in conversation_ids:
         payload["conversation_id"] = conversation_ids[user_id]
 
@@ -54,23 +51,23 @@ def ask_dify(user_id: str, message: str) -> str:
     response.raise_for_status()
     data = response.json()
 
-    # 次回のために会話IDを保存
     conversation_ids[user_id] = data.get("conversation_id", "")
     return data.get("answer", "うまく答えられませんでした。もう一度試してください。")
 
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/webhook", methods=["POST"])
 @app.route("/api/index", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST"])
 def callback():
     if request.method == "GET":
-        return "OK"
+        return "OK", 200
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-    return "OK"
+    return "OK", 200
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
