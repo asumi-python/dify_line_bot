@@ -66,8 +66,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        # デバッグ用：署名エラーでも200を返す
-        return "OK", 200
+        abort(400)
     return "OK", 200
 
 
