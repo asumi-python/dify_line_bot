@@ -51,24 +51,35 @@ def ask_dify(user_id: str, message: str) -> str:
     )
     response.raise_for_status()
 
+    import json
     answer = ""
     conv_id = ""
     for line in response.iter_lines():
         if line:
             line_str = line.decode("utf-8")
+            print(f"Dify stream line: {line_str[:200]}")
             if line_str.startswith("data: "):
-                import json
                 try:
                     data = json.loads(line_str[6:])
-                    if data.get("event") == "message":
+                    event = data.get("event", "")
+                    print(f"Dify event: {event}")
+                    if event == "message":
                         answer += data.get("answer", "")
-                    elif data.get("event") == "message_end":
+                    elif event == "agent_message":
+                        answer += data.get("answer", "")
+                    elif event == "text_chunk":
+                        answer += data.get("data", {}).get("text", "")
+                    elif event == "message_end":
                         conv_id = data.get("conversation_id", "")
-                except Exception:
-                    pass
+                    elif event == "workflow_finished":
+                        outputs = data.get("data", {}).get("outputs", {})
+                        answer = outputs.get("answer", outputs.get("text", answer))
+                except Exception as e:
+                    print(f"Parse error: {e}")
 
     if conv_id:
         conversation_ids[user_id] = conv_id
+    print(f"Final answer: {answer[:100]}")
     return answer or "うまく答えられませんでした。もう一度試してください。"
 
 
