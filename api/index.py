@@ -1,5 +1,5 @@
 import os
-import requests
+from openai import OpenAI
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -19,53 +19,51 @@ app = Flask(__name__)
 
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-DIFY_API_KEY = os.environ.get("DIFY_API_KEY")
-DIFY_BASE_URL = os.environ.get("DIFY_BASE_URL", "https://api.dify.ai/v1")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-conversation_ids = {}
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+conversation_histories = {}
+
+SYSTEM_PROMPT = """あなたは「料理レシピ相談Bot」です。ユーザーが持っている食材や食べたい料理を教えてもらい、具体的なレシピを提案します。
+
+【返答のルール】
+- 材料と分量を明確に書く
+- 調理手順を番号付きでわかりやすく説明する
+- 初心者でも作れるよう丁寧に説明する
+- 代替食材や保存方法も必要に応じてアドバイスする
+- 親しみやすい日本語で答える
+- 絵文字を適度に使って親しみやすくする"""
 
 
-def ask_dify(user_id: str, message: str) -> str:
-    headers = {
-        "Authorization": f"Bearer {DIFY_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "inputs": {},
-        "query": message,
-        "response_mode": "blocking",
-        "user": user_id,
-    }
-    if user_id in conversation_ids:
-        payload["conversation_id"] = conversation_ids[user_id]
+def ask_openai(user_id: str, message: str) -> str:
+    if user_id not in conversation_histories:
+        conversation_histories[user_id] = []
 
-    response = requests.post(
-        f"{DIFY_BASE_URL}/chat-messages",
-        headers=headers,
-        json=payload,
-        timeout=60,
+    conversation_histories[user_id].append({"role": "user", "content": message})
+
+    # 会話履歴が長くなりすぎないよう直近10件に制限
+    history = conversation_histories[user_id][-10:]
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
     )
-    response.raise_for_status()
 
-    data = response.json()
-    print(f"Dify response: {str(data)[:300]}")
-    answer = data.get("answer", "")
-    conv_id = data.get("conversation_id", "")
-    if conv_id:
-        conversation_ids[user_id] = conv_id
-    print(f"Final answer: {answer[:100]}")
-    return answer or "うまく答えられませんでした。もう一度試してください。"
+    answer = response.choices[0].message.content
+    conversation_histories[user_id].append({"role": "assistant", "content": answer})
+    return answer
 
 
-def send_dify_response(user_id: str, message: str):
+def send_line_message(user_id: str, message: str):
     try:
-        reply_text = ask_dify(user_id, message)
+        reply_text = ask_openai(user_id, message)
     except Exception as e:
-        print(f"Dify error: {e}")
-        reply_text = f"Difyエラー: {str(e)[:100]}"
+        print(f"OpenAI error: {e}")
+        reply_text = f"エラーが発生しました。もう一度試してください。"
 
     try:
         with ApiClient(configuration) as api_client:
@@ -99,9 +97,7 @@ def callback():
 def handle_message(event):
     user_id = event.source.user_id
     user_message = event.message.text
-
-    # Difyに問い合わせてpush_messageで返す
-    send_dify_response(user_id, user_message)
+    send_line_message(user_id, user_message)
 
 
 if __name__ == "__main__":
